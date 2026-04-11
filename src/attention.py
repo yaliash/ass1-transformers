@@ -21,7 +21,7 @@ def attention_scores(a, b):
     assert B1 == B2
     assert D1 == D2
 
-    A = a @ b.transpose(-2, -1) / math.sqrt(D1) # (b x n x head_dim) @ (b x head_dim x n) -> (b x n x n)
+    A = b @ a.transpose(-2, -1) / math.sqrt(D1) # (b x n x head_dim) @ (b x head_dim x n) -> (b x n x n)
     return A
 
 def create_causal_mask(embed_dim, n_heads, max_context_len):
@@ -37,6 +37,7 @@ def self_attention(v, A, mask = None):
         
     attention_weights = F.softmax(A, dim=-1) # (B, N, N)
     sa = attention_weights @ v # (B, N, N) @ (B, N, head_dim) -> (B, N, head_dim)
+    return sa
 
 
 def self_attention_layer(x, kqv_matrix, attention_mask):
@@ -75,6 +76,6 @@ class CausalSelfAttention(nn.Module):
         self.output_projection = nn.Linear(embed_dim, embed_dim)
 
     def forward(self, x):
-        sa = multi_head_attention_layer(x, self.kqv_matrices, self.mask)
+        sa = multi_head_attention_layer(x, self.kqv_matrices, self.mask) # (B, N, D)
         sa = self.output_projection(sa)
         return sa
