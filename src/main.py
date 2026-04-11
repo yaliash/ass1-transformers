@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import torch
 
+# Device selection for Mac (MPS/CPU)
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+
 if __name__ == "__main__":
     import lm
     import torch
@@ -36,7 +42,7 @@ if __name__ == "__main__":
         tokenizer.vocab_size(),
         mlp_hidden_size,
         with_residuals=True,
-    )
+    ).to(device)
 
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, betas=[0.9, 0.95])
 
@@ -50,6 +56,7 @@ if __name__ == "__main__":
             num_batches = num_batches + 1
 
             batch_x, batch_y = lm.batch_to_labeled_samples(batch)
+            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
 
             logits = model(batch_x)
 
