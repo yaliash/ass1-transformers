@@ -98,7 +98,12 @@ if __name__ == "__main__":
                     for _ in range(1):
                         model.eval()
                         sampled = tokenizer.detokenize(
-                            model.sample_continuation(tokenizer.tokenize("Hello"), 500)
+                            model.better_sample_continuation(
+                                prefix=tokenizer.tokenize("Hello"),
+                                max_tokens_to_generate=100, 
+                                temperature=0.8, 
+                                topK=5
+                            )
                         )
                         model.train()
                         print(f"Model sample: '''{sampled}'''")

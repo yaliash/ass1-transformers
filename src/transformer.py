@@ -122,39 +122,22 @@ class TransformerLM(nn.Module):
         with torch.no_grad():
             while len(generated) < max_tokens_to_generate:
                 if len(feed_to_lm) > self.max_context_len:
-                    # Trim to context length
                     feed_to_lm = feed_to_lm[-self.max_context_len:]
-                
-                # Convert input to tensor and send to device
-                inputs = torch.tensor([feed_to_lm], dtype=torch.long, device=device)
-                logits = self(inputs)
-                
-                # Get logits for the very last token in the sequence
+    
+                logits = self(torch.tensor([feed_to_lm], dtype=torch.long, device=device))
                 logits_for_last_token = logits[0, -1, :]
                 
-                # 1. Apply Temperature Scaling
-                # We divide the raw logits by the temperature BEFORE the softmax
                 if temperature > 0.0:
                     logits_for_last_token = logits_for_last_token / temperature
                 
-                # 2. Apply Top-K Filtering
-                # We find the top K values, and set everything else to negative infinity
                 if topK > 0:
-                    # torch.topk returns the values and their indices
                     top_values, _ = torch.topk(logits_for_last_token, topK)
-                    # The k-th value is the minimum threshold we will accept
                     min_accepted_value = top_values[-1] 
-                    # Mask out anything below that threshold
                     logits_for_last_token[logits_for_last_token < min_accepted_value] = float('-inf')
                 
-                # 3. Convert to Probabilities and Sample
                 distribution_for_last_token = F.softmax(logits_for_last_token, dim=-1)
-                
-                # Extract the sampled token back to a standard Python int
-                sampled_token = torch.multinomial(distribution_for_last_token, num_samples=1).item()
-                
+                sampled_token = int(torch.multinomial(distribution_for_last_token, num_samples=1).item())
                 generated.append(sampled_token)
                 feed_to_lm.append(sampled_token)
-                
         return generated
 
