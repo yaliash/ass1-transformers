@@ -14,24 +14,40 @@ class TransformerDecoderBlock(nn.Module):
         self.with_residuals = with_residuals
         self.is_prenorm = is_prenorm
 
-    def forward(self, inputs):
+    def forward(self, inputs, return_attention=False):
         x = inputs
         if self.with_residuals:
             if self.is_prenorm:
-                x = x + self.causal_attention(self.layer_norm_1(x))
+                if return_attention:
+                    attn_out, head_attentions = self.causal_attention(self.layer_norm_1(x), return_attention=True)
+                    x = x + attn_out
+                else:
+                    x = x + self.causal_attention(self.layer_norm_1(x))
                 x = x + self.mlp(self.layer_norm_2(x))
             else:
-                x = self.layer_norm_1(x + self.causal_attention(x))
+                if return_attention:
+                    attn_out, head_attentions = self.causal_attention(x, return_attention=True)
+                    x = self.layer_norm_1(x + attn_out)
+                else:
+                    x = self.layer_norm_1(x + self.causal_attention(x))
                 x = self.layer_norm_2(x + self.mlp(x))
-            return x
+            return (x, head_attentions) if return_attention else x
         else:
             if self.is_prenorm:
-                x = self.causal_attention(self.layer_norm_1(x))
+                if return_attention:
+                    attn_out, head_attentions = self.causal_attention(self.layer_norm_1(x), return_attention=True)
+                    x = attn_out
+                else:
+                    x = self.causal_attention(self.layer_norm_1(x))
                 x = self.mlp(self.layer_norm_2(x))
             else:
-                x = self.layer_norm_1(self.causal_attention(x))
+                if return_attention:
+                    attn_out, head_attentions = self.causal_attention(x, return_attention=True)
+                    x = self.layer_norm_1(attn_out)
+                else:
+                    x = self.layer_norm_1(self.causal_attention(x))
                 x = self.layer_norm_2(self.mlp(x))
-            return x
+            return (x, head_attentions) if return_attention else x
 
 class Embed(nn.Module):
     def __init__(self, vocab_size: int, embed_size: int, max_context_len):
@@ -73,13 +89,29 @@ class TransformerLM(nn.Module):
         n_params = sum(p.numel() for p in self.parameters())
         print("Parameter count: %.2fM" % (n_params/1e6,))
 
-    def forward(self, inputs):
+    def forward(self, inputs, return_attention=False, return_hidden_states=False):
         x = self.embed(inputs)
-        for layer in self.layers:
-            x = layer(x)
+        all_attentions = {}   # {layer_idx: [head_0_weights, ..., head_k_weights]}
+        hidden_states  = []   # list of (B, N, D) tensors, one per layer (post-block, pre-LN)
+
+        for layer_idx, layer in enumerate(self.layers):
+            if return_attention:
+                x, head_attentions = layer(x, return_attention=True)
+                all_attentions[layer_idx] = head_attentions
+            else:
+                x = layer(x)
+            if return_hidden_states:
+                hidden_states.append(x)
+
         x = self.layer_norm(x)
         logits = self.word_prediction(x)
-        return logits
+
+        extras = []
+        if return_attention:
+            extras.append(all_attentions)
+        if return_hidden_states:
+            extras.append(hidden_states)
+        return (logits, *extras) if extras else logits
 
     def init_weights(self):
         # initialize weights

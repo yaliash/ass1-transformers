@@ -29,34 +29,46 @@ def create_causal_mask(embed_dim, n_heads, max_context_len):
     mask = mask.view(1, max_context_len, max_context_len) # Reshape to add a leading dimension so it broadcasts across batches/heads correctly
     return mask
 
-def self_attention(v, A, mask = None):
-    if mask is not None: 
+def self_attention(v, A, mask=None, return_attention=False):
+    if mask is not None:
         # We slice the mask to N x N in case the sequence is shorter than max_context_len
-        N = A.size(-1) 
+        N = A.size(-1)
         A = A.masked_fill(mask[:, :N, :N] == 0, float("-inf"))
-        
+
     attention_weights = F.softmax(A, dim=-1) # (B, N, N)
     sa = attention_weights @ v # (B, N, N) @ (B, N, head_dim) -> (B, N, head_dim)
+    if return_attention:
+        return sa, attention_weights
     return sa
 
 
-def self_attention_layer(x, kqv_matrix, attention_mask):
+def self_attention_layer(x, kqv_matrix, attention_mask, return_attention=False):
     k, q, v = kqv(x, kqv_matrix)
     att = attention_scores(k, q)
+    if return_attention:
+        sa, attn_weights = self_attention(v, att, attention_mask, return_attention=True)
+        return sa, attn_weights
     sa = self_attention(v, att, attention_mask)
     return sa
 
-def multi_head_attention_layer(x, kqv_matrices, mask):
+def multi_head_attention_layer(x, kqv_matrices, mask, return_attention=False):
     B, N, D = x.size()
     head_outputs = []
-    
+    head_attentions = []
+
     for kqv_matrix in kqv_matrices: # Run attention for each head individually
-        head_sa = self_attention_layer(x, kqv_matrix, mask) # (B, N, head_dim), head_dim = D / n_heads
-        head_outputs.append(head_sa)
-        
+        if return_attention:
+            head_sa, attn_weights = self_attention_layer(x, kqv_matrix, mask, return_attention=True)
+            head_attentions.append(attn_weights)
+        else:
+            head_sa = self_attention_layer(x, kqv_matrix, mask)
+        head_outputs.append(head_sa) # (B, N, head_dim), head_dim = D / n_heads
+
     sa = torch.cat(head_outputs, dim=-1) # (B, N, D)
-    
+
     assert sa.size() == x.size()
+    if return_attention:
+        return sa, head_attentions  # head_attentions: list of (B, N, N) tensors, one per head
     return sa
 
 
@@ -75,7 +87,11 @@ class CausalSelfAttention(nn.Module):
         self.embed_dim = embed_dim
         self.output_projection = nn.Linear(embed_dim, embed_dim)
 
-    def forward(self, x):
-        sa = multi_head_attention_layer(x, self.kqv_matrices, self.mask) # (B, N, D)
+    def forward(self, x, return_attention=False):
+        if return_attention:
+            sa, head_attentions = multi_head_attention_layer(x, self.kqv_matrices, self.mask, return_attention=True)
+            sa = self.output_projection(sa)
+            return sa, head_attentions  # head_attentions: list of (B, N, N), one per head
+        sa = multi_head_attention_layer(x, self.kqv_matrices, self.mask)
         sa = self.output_projection(sa)
         return sa
