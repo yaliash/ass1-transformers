@@ -19,7 +19,7 @@ print(f"Training on device: {device}")
 if __name__ == "__main__":
     seq_len = 128
     batch_size = 64
-    data_path = "../data/he/"
+    data_path = "../data/en/"
     gradient_clipping = 1.0
     num_batches_to_train = 50000
 
